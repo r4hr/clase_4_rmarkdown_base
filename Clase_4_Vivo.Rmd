@@ -1,7 +1,6 @@
 ---
-title: "Clase 4 Curso de R"
-author: "Club de R para RRHH"
-date: "30/7/2020"
+title: "Untitled"
+author: "Data 4HR"
 output: html_document
 ---
 
@@ -9,20 +8,227 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# The Wall
-## Disco 1
-### Lado 1
+## Introducción
 
-1. In the Flesh?
-2. The **Thin Ice**
-3. Another Brick in the Wall (Part I)
-4. The Happiest Days of Our Lives
-5. Another Brick in the Wall (Part II)
-6. *Mother*
+Los datos de este informe son ficticios y los tomamos de un dataset disponible en [Kaggle](https://www.kaggle.com/rhuebner/human-resources-data-set/data). Esto es parte del curso [Introducción a R para RRHH](https://www.curselo.com.ar/data4hr) de [Data 4HR](https://data-4hr.com/capacitacion/).
 
-```{r echo=FALSE}
-suma_pavota <- 3+2
+# Reporte 2016 Compañía Imaginaria S.A.
+
+Este es el informe de RRHH del año 2016 de la empresa **Compañía Imaginaria S.A.** en el cual vamos a ver algunas métricas de RRHH de la empresa.
+
+ 
+
+```{r librerias-datos}
+library(readr)
+library(tidyverse)
+library(gt)
+library(lubridate)
+
+hr_data <- read_csv("Datasets/HRDataset_v13.csv")
+
+
+#### Preprocesamiento ####
+
+hr_data <- hr_data %>% 
+  filter(!is.na(Employee_Name)) %>% 
+  mutate(DateofHire = mdy(DateofHire), # Ajusto Formato de fechas
+         DateofTermination = mdy(DateofTermination),
+         conteo = 1) # Agrego una columna con valor uno para futuras operaciones
+
+empleados_activos <- hr_data %>% 
+  filter(!is.na(DateofTermination)) %>% 
+  summarise(emps = sum(conteo)) %>% 
+  pull(emps)
+
 ```
 
-El resultado de mi suma pavota es `r suma_pavota`. Sin la tilde invertida `me escribe de esta manera`.
+Nuestra nómina actual está compuesta por `r empleados_activos` empleados activos, los cuales están distribuidos en las siguientes áreas:
+
+```{r}
+emp_dept <- hr_data %>%
+  filter(!is.na(DateofTermination)) %>% 
+  group_by(Department) %>% 
+  tally(name="Employees")
+
+emp_dept
+```
+
+## Evolución de la cantidad de empleados
+
+```{r}
+hc_2014 <- hr_data %>% 
+  filter(DateofHire < "2014-12-31") %>% 
+  filter(is.na(DateofTermination) |
+         DateofTermination > "2014-12-31") %>% 
+  tally(name="headcount_2014")
+
+
+hc_2015 <- hr_data %>% 
+  filter(DateofHire < "2015-12-31") %>% 
+  filter(is.na(DateofTermination) |
+           DateofTermination > "2015-12-31") %>% 
+  tally(name="headcount_2015")
+
+hc_2016 <- hr_data %>% 
+  filter(DateofHire < "2016-12-31") %>% 
+  filter(is.na(DateofTermination) |
+           DateofTermination > "2016-12-31") %>% 
+  tally(name="headcount_2016")
+
+hc_year <- data.frame(hc_2014, hc_2015, hc_2016) %>% 
+  pivot_longer(cols = c(1:3), names_to = "Year", values_to = "Headcount") %>% 
+  separate(Year, sep = "_", into = c("a", "Year")) %>% 
+  mutate(Year = as.numeric(Year)) %>% 
+  select(-a)
+
+hc_year
+```
+
+Este año se incorporaron empleados
+
+# Rotación
+## Contrataciones 2010-2016
+
+La evolución de las contrataciones por año fueron las siguientes:
+```{r}
+hires <- hr_data %>% 
+  select(DateofHire, conteo) %>% 
+  mutate(Year = year(DateofHire)) %>% 
+  group_by(Year) %>%
+  summarise(hires = sum(conteo)) %>% 
+  filter(between(Year, 2010, 2016))
+
+gt(hires)
+```
+
+Los ingresos por departamento fueron los siguientes:
+```{r}
+hires_dept <- hr_data %>% 
+  select(DateofHire, Department, conteo) %>% 
+  mutate(Year = year(DateofHire)) %>% 
+  group_by(Year,Department) %>%
+  summarise(hires = sum(conteo)) %>% 
+  filter(between(Year, 2010, 2016))
+
+ggplot(hires_dept, aes(x= Year, y= hires))+
+  geom_line()+
+  facet_wrap(~Department)
+```
+
+
+## Egresos 2010-2016
+
+Los egresos en los últimos años fueron los siguientes:
+
+```{r}
+terminations <- hr_data %>% 
+  select(DateofTermination, conteo) %>% 
+  filter(!is.na(DateofTermination)) %>% 
+  mutate(Year = year(DateofTermination)) %>% 
+  group_by(Year) %>%
+  summarise(terminations = sum(conteo)) 
+```
+
+Acá podemos ver la evolución las contrataciones y de los egresos:
+```{r altas-bajas-plot}
+ggplot(hires, aes(x = Year, y = hires))+
+  geom_line()
+
+ggplot(terminations, aes(x = Year, y = terminations))+
+  geom_line()
+```
+
+## Análisis de Rotación
+
+Teniendo en cuenta los ingresos y los egresos a la empresa, la rotación neta por año ha sido la siguiente:
+```{r}
+# Uno los dataframes de altas y de bajas
+turnover <- hires %>% 
+  left_join(terminations, by = "Year")
+
+# Creo una columna nueva con la rotación
+turnover_net <- turnover %>% 
+  mutate(turnover = hires - terminations)
+
+# Roto la tabla
+turnover_wide <-  sjmisc::rotate_df(turnover_net, cn=TRUE)
+
+turnover_wide
+```
+
+## Tasas de contratación y de egresos
+
+Las tasas de contratación y de egresos son las siguientes:
+```{r}
+turnover_rates <- turnover %>% 
+  filter(Year %in% c(2014, 2015, 2016)) %>% 
+  left_join(hc_year, by="Year") %>% 
+  mutate(hiring_rate = hires/Headcount,
+         termination_rate = terminations/Headcount)
+
+
+turnover_rates
+
+ggplot(turnover_rates, aes(x= Year, y = hiring_rate))+
+  geom_col()
+
+ggplot(turnover_rates, aes(x= Year, y = termination_rate))+
+  geom_col()
+```
+
+# Análisis de Satisfacción con el trabajo
+
+El nivel de satisfacción promedio por área es el siguiente:
+
+```{r}
+hr_data %>% 
+  select(Department, EmpSatisfaction) %>% 
+  group_by(Department) %>% 
+  summarise(Satisfaccion_Promedio = mean(EmpSatisfaction)) %>% 
+  ggplot(aes(x= reorder(Department, -Satisfaccion_Promedio), y = Satisfaccion_Promedio))+
+  geom_col()
+```
+
+Si desagregamos los resultados por respuesta obtenemos lo siguiente:
+```{r}
+hr_data %>% 
+  select(Department, EmpSatisfaction) %>% 
+  mutate(EmpSatisfaction = factor(EmpSatisfaction, # Para considerarlos como valores nominales
+                                  levels = c(1,2,3,4,5))) %>% 
+  ggplot(aes(x = Department, fill = EmpSatisfaction))+
+  geom_bar(position = "fill") +
+  coord_flip() +
+  scale_fill_brewer() + # Cambia la paleta de Colores
+  labs(title = "Nivel de Satisfacción por Departamento",
+       x="", y="")
+```
+
+Veamos el nivel de satisfacción por mánager
+```{r}
+satis_manager <- hr_data %>% 
+  select(ManagerName, Department, EmpSatisfaction) %>% 
+  group_by(Department, ManagerName) %>%
+  summarise(Satisfaccion_Promedio= mean(EmpSatisfaction))  
+  
+gt(satis_manager) %>% 
+  tab_header(title = "Satisfacción promedio \n por Manager") %>% 
+  fmt_number(columns =  vars(Satisfaccion_Promedio),
+             decimals = 2)
+```
+
+Por último, podemos ver los resultados gráficamente.
+```{r}
+satis_by_mng <- satis_manager %>% 
+  select(ManagerName, Satisfaccion_Promedio) %>% 
+  group_by(ManagerName) %>%
+  summarise(Satisfaccion_Promedio= mean(Satisfaccion_Promedio))
+
+satis_by_mng
+ggplot(satis_by_mng, aes(x=Satisfaccion_Promedio, 
+                         y = reorder(ManagerName, Satisfaccion_Promedio)))+
+  geom_col()
+
+```
+
+<br><br><br><br>
 
