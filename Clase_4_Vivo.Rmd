@@ -1,0 +1,28 @@
+---
+title: "Clase 4 Curso de R"
+author: "Club de R para RRHH"
+date: "30/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The Wall
+## Disco 1
+### Lado 1
+
+1. In the Flesh?
+2. The **Thin Ice**
+3. Another Brick in the Wall (Part I)
+4. The Happiest Days of Our Lives
+5. Another Brick in the Wall (Part II)
+6. *Mother*
+
+```{r echo=FALSE}
+suma_pavota <- 3+2
+```
+
+El resultado de mi suma pavota es `r suma_pavota`. Sin la tilde invertida `me escribe de esta manera`.
+
